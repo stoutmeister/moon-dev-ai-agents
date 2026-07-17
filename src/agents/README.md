@@ -28,6 +28,38 @@
     - see every morning the recently added coins https://docs.coingecko.com/reference/coins-list-new
 [] build a flow to run these agents every 24 hours, like the new or top agent, the listing arb agent etc. 
 
+## 🏠 Real Estate Wholesaling: Skip Tracer + Dialer
+
+Two agents that form a lead-to-call pipeline for wholesaling real estate:
+
+`leads.csv → skip_tracer_agent.py → traced_leads.csv → wholesale_dialer_agent.py → call_log.csv`
+
+**`skip_tracer_agent.py`** — takes a CSV of property addresses/owner names, pulls
+owner phone numbers + emails from a skip trace API (BatchData), scrubs against
+your local `dnc_list.csv`, and uses AI to score seller motivation so the hottest
+leads get called first.
+- Needs `BATCHDATA_API_KEY` in `.env` (+ `ANTHROPIC_KEY` if AI scoring is on)
+- Run once with no `leads.csv` and it drops a fill-in template for you
+- Output sorted by motivation score → `src/data/skip_tracer/traced_leads.csv`
+
+**`wholesale_dialer_agent.py`** — works the traced queue with an AI acquisitions
+rep that qualifies the deal (condition, price, timeline, motivation) and captures
+a disposition per call. Opt-outs are written to a shared `dnc_list.csv` the
+tracer scrubs against, so you never call them again.
+- `TESTING_MODE = True` → practice in your terminal (AI is the rep, you type the
+  seller). No Twilio needed.
+- `TESTING_MODE = False` → live outbound calls via Twilio (`TWILIO_*` in `.env`)
+- Enforces TCPA calling hours (9am–8pm by default) and a motivation floor
+
+⚠️ **Compliance is on you**: follow the TCPA, scrub the national DNC registry,
+respect calling hours, and identify yourself. The local `dnc_list.csv` scrub and
+calling-hour guard are guardrails, not a substitute for a real DNC registry scrub.
+
+```bash
+python src/agents/skip_tracer_agent.py      # trace leads → build queue
+python src/agents/wholesale_dialer_agent.py # work the queue
+```
+
 ## Need an API key? for a limited time, bootcamp members get free api keys for claude, openai, helius, birdeye & quant elite gets access to the moon dev api. join here: https://algotradecamp.com
 
 
