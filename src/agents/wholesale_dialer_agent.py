@@ -65,9 +65,33 @@ AI_MAX_TOKENS = 150   # keep it conversational and short on the phone
 
 # Dialing rules
 MIN_MOTIVATION_TO_CALL = 40   # skip dead leads below this score
-CALLING_HOURS_START = 9       # local hour, 24h. TCPA safe harbor is 8am-9pm
+CALLING_HOURS_START = 9       # hour in the LEAD'S local time, 24h. TCPA safe harbor is 8am-9pm
 CALLING_HOURS_END = 20
 ENFORCE_CALLING_HOURS = True
+
+# US state -> IANA timezone (dominant zone per state). Used to enforce calling
+# hours in the property owner's local time, not the server's. States that span
+# two zones use the dominant one; AZ uses Phoenix (no DST).
+STATE_TIMEZONES = {
+    "AL": "America/Chicago",    "AK": "America/Anchorage",  "AZ": "America/Phoenix",
+    "AR": "America/Chicago",    "CA": "America/Los_Angeles","CO": "America/Denver",
+    "CT": "America/New_York",   "DE": "America/New_York",   "DC": "America/New_York",
+    "FL": "America/New_York",   "GA": "America/New_York",   "HI": "Pacific/Honolulu",
+    "IA": "America/Chicago",    "ID": "America/Denver",     "IL": "America/Chicago",
+    "IN": "America/New_York",   "KS": "America/Chicago",    "KY": "America/New_York",
+    "LA": "America/Chicago",    "MA": "America/New_York",   "MD": "America/New_York",
+    "ME": "America/New_York",   "MI": "America/New_York",   "MN": "America/Chicago",
+    "MO": "America/Chicago",    "MS": "America/Chicago",    "MT": "America/Denver",
+    "NC": "America/New_York",   "ND": "America/Chicago",    "NE": "America/Chicago",
+    "NH": "America/New_York",   "NJ": "America/New_York",   "NM": "America/Denver",
+    "NV": "America/Los_Angeles","NY": "America/New_York",   "OH": "America/New_York",
+    "OK": "America/Chicago",    "OR": "America/Los_Angeles","PA": "America/New_York",
+    "RI": "America/New_York",   "SC": "America/New_York",   "SD": "America/Chicago",
+    "TN": "America/Chicago",    "TX": "America/Chicago",    "UT": "America/Denver",
+    "VA": "America/New_York",   "VT": "America/New_York",   "WA": "America/Los_Angeles",
+    "WI": "America/Chicago",    "WV": "America/New_York",   "WY": "America/Denver",
+    "PR": "America/Puerto_Rico",
+}
 
 # Your company info (used in the script) - EDIT THESE 🌙
 COMPANY_NAME = "Moon Dev Home Buyers"
@@ -152,12 +176,26 @@ class WholesaleDialerAgent(BaseAgent):
             raise ValueError("🚨 Live mode needs TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER in .env!")
         self.twilio = Client(sid, token)
 
-    def within_calling_hours(self):
-        """TCPA safe-harbor check on local time"""
+    @staticmethod
+    def _lead_now(state):
+        """Current datetime in the lead's local timezone (by property state).
+        Falls back to server local time when the state is unknown/unmapped."""
+        tz_name = STATE_TIMEZONES.get((state or "").strip().upper())
+        if not tz_name:
+            return datetime.now(), False
+        try:
+            from zoneinfo import ZoneInfo
+            return datetime.now(ZoneInfo(tz_name)), True
+        except Exception:
+            # zoneinfo missing (very old Python) or tz db unavailable - fail safe to server time
+            return datetime.now(), False
+
+    def within_calling_hours(self, state=None):
+        """TCPA safe-harbor check in the LEAD'S local time, not the server's."""
         if not ENFORCE_CALLING_HOURS:
             return True
-        hour = datetime.now().hour
-        return CALLING_HOURS_START <= hour < CALLING_HOURS_END
+        now, _ = self._lead_now(state)
+        return CALLING_HOURS_START <= now.hour < CALLING_HOURS_END
 
     def load_queue(self):
         """Load pending leads, hottest first, above the motivation floor"""
@@ -201,10 +239,6 @@ class WholesaleDialerAgent(BaseAgent):
 
     def run(self):
         """🚀 Work the queue"""
-        if ENFORCE_CALLING_HOURS and not self.within_calling_hours():
-            cprint(f"🌙 Outside calling hours ({CALLING_HOURS_START}:00-{CALLING_HOURS_END}:00). Come back later - respect the TCPA! 🙏", "yellow")
-            return
-
         loaded = self.load_queue()
         if loaded is None:
             return
@@ -214,11 +248,25 @@ class WholesaleDialerAgent(BaseAgent):
             cprint("😴 No callable leads right now. Trace more leads or lower MIN_MOTIVATION_TO_CALL. 🌙", "yellow")
             return
 
+        calls_made = 0
+        skipped_hours = 0
         for i, row in enumerate(queue):
+            state = row.get("property_state", "")
+
+            # TCPA calling-hours check in the LEAD'S local time
+            if not self.within_calling_hours(state):
+                now, resolved = self._lead_now(state)
+                where = f"{state.upper()}" if resolved else "server (state unknown)"
+                cprint(f"⏰ [{i+1}/{len(queue)}] Skipping {row['property_street']} - {now.strftime('%H:%M')} local in {where}, "
+                       f"outside {CALLING_HOURS_START}:00-{CALLING_HOURS_END}:00. 🙏", "yellow")
+                skipped_hours += 1
+                continue
+
             number = self._first_callable_number(row, dnc)
             owner = f"{row.get('owner_first_name', '')} {row.get('owner_last_name', '')}".strip() or row.get("owner_name_traced", "there")
             address = f"{row['property_street']}, {row['property_city']} {row['property_state']}"
 
+            calls_made += 1
             cprint(f"\n{'═'*55}", "cyan")
             cprint(f"📞 [{i+1}/{len(queue)}] Calling {owner} @ {address}", "cyan")
             cprint(f"   🌡️ Motivation: {int(row['motivation_score'])}/100 | ☎️  {format_phone(number)}", "cyan")
@@ -239,7 +287,15 @@ class WholesaleDialerAgent(BaseAgent):
                 self._add_to_dnc(number, "opted out on call")
                 dnc.add(number)
 
-        cprint(f"\n🌙 Session done! Logged to {CALL_LOG_CSV.name}. Peace and love. ✌️", "green")
+        if calls_made == 0 and skipped_hours:
+            cprint(f"\n🌙 All {skipped_hours} callable lead(s) are outside their local calling hours right now. "
+                   f"Come back later - respect the TCPA! 🙏", "yellow")
+            return
+
+        summary = f"\n🌙 Session done! {calls_made} call(s) made"
+        if skipped_hours:
+            summary += f", {skipped_hours} skipped for calling hours"
+        cprint(f"{summary}. Logged to {CALL_LOG_CSV.name}. Peace and love. ✌️", "green")
 
     def run_call(self, number, owner, address, notes):
         """Route to live or practice call handling"""

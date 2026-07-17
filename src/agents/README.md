@@ -49,7 +49,9 @@ tracer scrubs against, so you never call them again.
 - `TESTING_MODE = True` → practice in your terminal (AI is the rep, you type the
   seller). No Twilio needed.
 - `TESTING_MODE = False` → live outbound calls via Twilio (`TWILIO_*` in `.env`)
-- Enforces TCPA calling hours (9am–8pm by default) and a motivation floor
+- Enforces TCPA calling hours **in each lead's local time** (9am–8pm by default,
+  resolved from the property's state timezone) and a motivation floor. Leads
+  currently outside their local window are skipped, not blocked for everyone.
 
 **`wholesale_dialer_webhook.py`** — the live-call brain. Twilio needs a public URL
 to POST the seller's spoken words to; this Flask server holds the full two-way AI
