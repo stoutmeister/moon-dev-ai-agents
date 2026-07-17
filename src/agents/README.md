@@ -51,6 +51,20 @@ tracer scrubs against, so you never call them again.
 - `TESTING_MODE = False` → live outbound calls via Twilio (`TWILIO_*` in `.env`)
 - Enforces TCPA calling hours (9am–8pm by default) and a motivation floor
 
+**`wholesale_dialer_webhook.py`** — the live-call brain. Twilio needs a public URL
+to POST the seller's spoken words to; this Flask server holds the full two-way AI
+conversation, captures opt-outs into the shared `dnc_list.csv` live, and writes the
+disposition + deal notes to `call_log.csv` when the call ends. Only needed for live
+mode:
+```bash
+python src/agents/wholesale_dialer_webhook.py   # runs on :5001
+ngrok http 5001                                 # expose it publicly
+# then in .env: DIALER_WEBHOOK_URL=https://xxxx.ngrok.io/dialer/gather
+```
+The dialer passes `DIALER_WEBHOOK_URL` as the `<Gather>` action and registers the
+matching `/dialer/status` callback automatically, so the loop and completion
+logging just work once the URL is set.
+
 ⚠️ **Compliance is on you**: follow the TCPA, scrub the national DNC registry,
 respect calling hours, and identify yourself. The local `dnc_list.csv` scrub and
 calling-hour guard are guardrails, not a substitute for a real DNC registry scrub.

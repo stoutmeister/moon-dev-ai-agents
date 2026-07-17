@@ -229,6 +229,11 @@ class WholesaleDialerAgent(BaseAgent):
             transcript, disposition_data = self.run_call(number, owner, address, row.get("notes", ""))
             self._record_call(full_df, row, number, transcript, disposition_data)
 
+            # In practice mode we know the disposition now; in live mode the webhook
+            # captures the real opt-out on hangup and writes DNC itself.
+            if not TESTING_MODE:
+                continue
+
             # If they opted out, add to DNC immediately so we never call again
             if disposition_data.get("disposition") == "dnc":
                 self._add_to_dnc(number, "opted out on call")
@@ -286,21 +291,29 @@ class WholesaleDialerAgent(BaseAgent):
             {"role": "user", "content": "Generate ONLY your opening line for the cold call. One or two sentences."},
         ])
 
+        gather_url = os.getenv("DIALER_WEBHOOK_URL", "")
+        if not gather_url:
+            cprint("   ⚠️ DIALER_WEBHOOK_URL not set - the seller's first reply has nowhere to go!", "red")
+            cprint("      Start wholesale_dialer_webhook.py, expose it (ngrok), and set DIALER_WEBHOOK_URL. 🌙", "yellow")
+
         response = VoiceResponse()
-        gather = Gather(input="speech", speechTimeout="auto", action=os.getenv("DIALER_WEBHOOK_URL", ""))
+        gather = Gather(input="speech", speechTimeout="auto", action=gather_url, method="POST")
         gather.say(opener, voice="Polly.Matthew")
         response.append(gather)
 
-        call = self.twilio.calls.create(
-            to=f"+1{number}",
-            from_=self.twilio_number,
-            twiml=str(response),
-        )
-        cprint(f"   ☎️ Live call placed (SID {call.sid}). Opener: {opener}", "green")
-        cprint("   ℹ️ Full two-way AI conversation needs DIALER_WEBHOOK_URL wired to a Flask handler (see phone_agent.py).", "blue")
+        # Route call-lifecycle events to the webhook so it can analyze + log on completion.
+        status_url = gather_url.replace("/dialer/gather", "/dialer/status") if gather_url else None
+        create_kwargs = {"to": f"+1{number}", "from_": self.twilio_number, "twiml": str(response)}
+        if status_url:
+            create_kwargs["status_callback"] = status_url
+            create_kwargs["status_callback_event"] = ["completed"]
 
-        transcript = f"{CALLER_NAME}: {opener}\n[live call - transcript captured via webhook]"
-        return transcript, {"disposition": "no_answer", "summary": "live call placed, awaiting webhook transcript"}
+        call = self.twilio.calls.create(**create_kwargs)
+        cprint(f"   ☎️ Live call placed (SID {call.sid}). Opener: {opener}", "green")
+        cprint("   💬 Two-way AI conversation handled by wholesale_dialer_webhook.py; disposition logs on hangup.", "blue")
+
+        transcript = f"{CALLER_NAME}: {opener}\n[live call - full transcript captured by webhook]"
+        return transcript, {"disposition": "no_answer", "summary": "live call placed, webhook owns the transcript + disposition"}
 
     def _ai_reply(self, conversation):
         """Get the AI rep's next line"""
@@ -354,6 +367,15 @@ class WholesaleDialerAgent(BaseAgent):
             "summary": data.get("summary", ""),
             "transcript": transcript.replace("\n", " | "),
         }
+        # In live mode the webhook owns the authoritative call_log row (written on
+        # hangup). The dialer only marks the lead "dialing" so we don't re-queue it.
+        if not TESTING_MODE:
+            mask = (full_df["property_street"] == row["property_street"])
+            full_df.loc[mask, "call_status"] = "dialing"
+            full_df.to_csv(TRACED_CSV, index=False)
+            cprint("   ⏳ Marked 'dialing' - webhook will log the disposition on hangup.", "blue")
+            return
+
         log_df = pd.DataFrame([log_row])
         if CALL_LOG_CSV.exists():
             log_df = pd.concat([pd.read_csv(CALL_LOG_CSV, dtype=str), log_df], ignore_index=True)
