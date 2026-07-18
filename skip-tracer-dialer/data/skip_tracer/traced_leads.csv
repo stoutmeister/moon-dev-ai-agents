@@ -1,0 +1,2 @@
+owner_first_name,owner_last_name,owner_name_traced,property_street,property_city,property_state,property_zip,notes,email,litigator_flag,motivation_score,motivation_reasoning,call_status,traced_at,phone_1,phone_1_type,phone_2,phone_2_type,phone_3,phone_3_type
+Pat,Rivera,Pat Rivera,123 Maple Street,Dallas,TX,75201,"absentee owner, property vacant ~8 months, behind on property taxes",,False,85,"absentee owner + long vacancy + tax delinquency = strong motivation",pending,2026-07-18 09:00:00,5551234567,Mobile,,,,

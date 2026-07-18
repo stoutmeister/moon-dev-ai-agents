@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+data/skip_tracer/call_log.csv
+data/skip_tracer/dnc_list.csv
+data/skip_tracer/leads.csv
