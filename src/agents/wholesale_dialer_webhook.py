@@ -74,12 +74,12 @@ dialer = WholesaleDialerAgent.__new__(WholesaleDialerAgent)  # skip __init__ (no
 def _boot_dialer():
     """Initialize just the model + Twilio bits the webhook needs, once."""
     from src.models.model_factory import model_factory
-    from src.agents.wholesale_dialer_agent import AI_MODEL_TYPE
+    from src.agents.wholesale_dialer_agent import AI_MODEL_TYPE, AI_MODEL_NAME
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     dialer.type = "wholesale_dialer_webhook"
     dialer.start_time = datetime.now()
-    dialer.model = model_factory.get_model(AI_MODEL_TYPE)
+    dialer.model = model_factory.get_model(AI_MODEL_TYPE, AI_MODEL_NAME)
     if not dialer.model:
         raise ValueError(f"🚨 Could not initialize {AI_MODEL_TYPE} model for the webhook AI rep!")
     dialer.twilio = None

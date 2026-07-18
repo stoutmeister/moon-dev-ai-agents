@@ -65,6 +65,7 @@ TESTING_MODE = True  # True = practice in terminal, False = live Twilio calls
 
 # AI acquisitions rep
 AI_MODEL_TYPE = "claude"
+AI_MODEL_NAME = "claude-haiku-4-5"  # cheap + fast; the project default haiku-3.5 was retired Feb 2026
 AI_TEMPERATURE = 0.7
 AI_MAX_TOKENS = 150   # keep it conversational and short on the phone
 
@@ -160,7 +161,7 @@ class WholesaleDialerAgent(BaseAgent):
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
         from src.models.model_factory import model_factory
-        self.model = model_factory.get_model(AI_MODEL_TYPE)
+        self.model = model_factory.get_model(AI_MODEL_TYPE, AI_MODEL_NAME)
         if not self.model:
             raise ValueError(f"🚨 Could not initialize {AI_MODEL_TYPE} model for the AI rep!")
 
