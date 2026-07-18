@@ -72,9 +72,16 @@ respect calling hours, and identify yourself. The local `dnc_list.csv` scrub and
 calling-hour guard are guardrails, not a substitute for a real DNC registry scrub.
 
 ```bash
-python src/agents/skip_tracer_agent.py      # trace leads → build queue
-python src/agents/wholesale_dialer_agent.py # work the queue
+python src/agents/skip_tracer_agent.py                    # trace leads → build queue
+python src/agents/wholesale_dialer_agent.py --verify-setup # preflight: env + webhook + queue checklist
+python src/agents/wholesale_dialer_agent.py               # work the queue
 ```
+
+**Preflight (`--verify-setup`)**: before dialing, this prints a green/red checklist
+for the current mode — AI model key, Twilio creds + `DIALER_WEBHOOK_URL` and its
+`/dialer/health` reachability (live mode only), and whether the traced queue has any
+callable leads above the motivation floor. It exits non-zero on any failure, so the
+dry run fails fast with a clear message instead of breaking mid-call.
 
 ## Need an API key? for a limited time, bootcamp members get free api keys for claude, openai, helius, birdeye & quant elite gets access to the moon dev api. join here: https://algotradecamp.com
 
