@@ -29,6 +29,11 @@ Requires in .env:
     ANTHROPIC_KEY (or another provider) for the AI rep
     TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER  (live mode only)
 
+Preflight before dialing:
+    python src/agents/wholesale_dialer_agent.py --verify-setup
+    → green/red checklist of env vars, webhook reachability (live mode), and
+      whether the traced queue has callable leads. Exits non-zero on any failure.
+
 ⚠️ COMPLIANCE: Live outbound dialing is regulated. Follow the TCPA, honor the
 national DNC registry, respect calling-hours windows, and identify yourself.
 This agent enforces calling hours and honors opt-outs, but you are responsible
@@ -60,6 +65,7 @@ TESTING_MODE = True  # True = practice in terminal, False = live Twilio calls
 
 # AI acquisitions rep
 AI_MODEL_TYPE = "claude"
+AI_MODEL_NAME = "claude-haiku-4-5"  # cheap + fast; the project default haiku-3.5 was retired Feb 2026
 AI_TEMPERATURE = 0.7
 AI_MAX_TOKENS = 150   # keep it conversational and short on the phone
 
@@ -155,7 +161,7 @@ class WholesaleDialerAgent(BaseAgent):
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
         from src.models.model_factory import model_factory
-        self.model = model_factory.get_model(AI_MODEL_TYPE)
+        self.model = model_factory.get_model(AI_MODEL_TYPE, AI_MODEL_NAME)
         if not self.model:
             raise ValueError(f"🚨 Could not initialize {AI_MODEL_TYPE} model for the AI rep!")
 
@@ -479,7 +485,129 @@ def format_phone(digits):
     return digits
 
 
+# Model type -> the .env key the ModelFactory expects (mirrors model_factory.py)
+_MODEL_KEY_NAMES = {
+    "claude": "ANTHROPIC_KEY",
+    "openai": "OPENAI_KEY",
+    "groq": "GROQ_API_KEY",
+    "deepseek": "DEEPSEEK_KEY",
+    "xai": "GROK_API_KEY",
+    "ollama": None,  # local, no key needed
+}
+
+
+def preflight():
+    """🩺 Pre-dial checklist. Verifies env + reachability + queue BEFORE dialing so
+    the dry run fails fast with a clear message instead of mid-call. Returns True
+    if everything needed for the current mode is ready."""
+    load_dotenv(dotenv_path=Path(project_root) / ".env")
+
+    mode = "PRACTICE" if TESTING_MODE else "LIVE"
+    cprint(f"\n🩺 Moon Dev's Wholesale Dialer preflight ({mode} mode) 🌙", "cyan")
+    cprint("═" * 55, "cyan")
+
+    checks = []  # (ok: bool, label: str, detail: str)
+
+    def check(ok, label, detail=""):
+        checks.append((ok, label, detail))
+
+    # 1) AI rep model key
+    key_name = _MODEL_KEY_NAMES.get(AI_MODEL_TYPE, None)
+    if AI_MODEL_TYPE == "ollama":
+        check(True, f"AI model '{AI_MODEL_TYPE}'", "local - no API key needed")
+    elif key_name is None:
+        check(False, f"AI model '{AI_MODEL_TYPE}'", "unknown model type - check AI_MODEL_TYPE")
+    else:
+        has = bool(os.getenv(key_name))
+        check(has, f"AI model key ({key_name})", "found" if has else f"missing - add {key_name} to .env")
+
+    # 2) Live-mode requirements
+    if not TESTING_MODE:
+        for env_name in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER"):
+            has = bool(os.getenv(env_name))
+            check(has, env_name, "found" if has else "missing - required for live calls")
+
+        webhook = os.getenv("DIALER_WEBHOOK_URL", "")
+        if not webhook:
+            check(False, "DIALER_WEBHOOK_URL", "missing - the seller's replies have nowhere to go")
+        elif "/dialer/gather" not in webhook:
+            check(False, "DIALER_WEBHOOK_URL", f"should end in /dialer/gather (got {webhook})")
+        else:
+            check(True, "DIALER_WEBHOOK_URL", webhook)
+            _check_webhook_reachable(webhook, check)
+    else:
+        check(True, "Twilio", "not needed in practice mode")
+
+    # 3) Traced lead queue
+    _check_queue(check)
+
+    # Render results
+    cprint("", "cyan")
+    all_ok = True
+    for ok, label, detail in checks:
+        icon, color = ("✅", "green") if ok else ("❌", "red")
+        line = f"  {icon} {label}"
+        if detail:
+            line += f" — {detail}"
+        cprint(line, color)
+        all_ok = all_ok and ok
+
+    cprint("═" * 55, "cyan")
+    if all_ok:
+        cprint("🚀 All checks passed — you're clear to dial! Run without --verify-setup. 🌙", "green")
+    else:
+        cprint("🛑 Fix the ❌ items above before dialing. 🌙", "red")
+    return all_ok
+
+
+def _check_webhook_reachable(webhook_url, check):
+    """GET the webhook's /dialer/health and confirm it answers."""
+    import requests
+    health_url = webhook_url.replace("/dialer/gather", "/dialer/health")
+    try:
+        resp = requests.get(health_url, timeout=5)
+        if resp.status_code == 200 and resp.json().get("status") == "ok":
+            check(True, "Webhook reachable", f"{health_url} → ok")
+        else:
+            check(False, "Webhook reachable", f"{health_url} → HTTP {resp.status_code}")
+    except Exception as e:
+        check(False, "Webhook reachable", f"{health_url} unreachable ({type(e).__name__}) - is wholesale_dialer_webhook.py running + ngrok up?")
+
+
+def _check_queue(check):
+    """Confirm there's at least one callable, in-motivation, pending lead."""
+    if not TRACED_CSV.exists():
+        check(False, "Traced lead queue", f"{TRACED_CSV.name} not found - run skip_tracer_agent.py first")
+        return
+
+    from src.agents.skip_tracer_agent import normalize_phone
+    df = pd.read_csv(TRACED_CSV, dtype=str).fillna("")
+    df["motivation_score"] = pd.to_numeric(df["motivation_score"], errors="coerce").fillna(0)
+
+    dnc = set()
+    if DNC_CSV.exists():
+        dnc = set(normalize_phone(p) for p in pd.read_csv(DNC_CSV, dtype=str)["phone"].dropna())
+
+    pending = df[(df["call_status"] == "pending") & (df["motivation_score"] >= MIN_MOTIVATION_TO_CALL)]
+    callable_count = 0
+    for _, row in pending.iterrows():
+        if any(normalize_phone(row.get(f"phone_{s}", "")) and normalize_phone(row.get(f"phone_{s}", "")) not in dnc
+               for s in range(1, 4)):
+            callable_count += 1
+
+    if callable_count:
+        check(True, "Traced lead queue", f"{callable_count} callable lead(s) ≥ motivation {MIN_MOTIVATION_TO_CALL}")
+    else:
+        check(False, "Traced lead queue",
+              f"0 callable leads ≥ motivation {MIN_MOTIVATION_TO_CALL} - trace more or lower MIN_MOTIVATION_TO_CALL")
+
+
 if __name__ == "__main__":
+    import sys as _sys
+    if "--verify-setup" in _sys.argv:
+        ok = preflight()
+        _sys.exit(0 if ok else 1)
+
     try:
         agent = WholesaleDialerAgent()
         agent.run()
