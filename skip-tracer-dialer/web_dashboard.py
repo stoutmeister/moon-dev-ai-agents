@@ -5,6 +5,7 @@ Displays leads, call logs, and provides controls for the dialer.
 
 import os
 import sys
+import subprocess
 from pathlib import Path
 import json
 from datetime import datetime
@@ -30,6 +31,9 @@ load_dotenv(dotenv_path=project_root / ".env")
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config['JSON_SORT_KEYS'] = False
+
+# Global state
+dialer_process = None
 
 
 @app.route("/")
@@ -143,6 +147,82 @@ def get_system_info():
         "api_configured": bool(get_claude_model("claude-haiku-4-5")),
         "data_dir": str(DATA_DIR),
     })
+
+
+@app.route("/api/start-dialer", methods=["POST"])
+def start_dialer():
+    """Start the wholesale dialer in the background"""
+    global dialer_process
+
+    try:
+        # Check if dialer is already running
+        if dialer_process and dialer_process.poll() is None:
+            return jsonify({"error": "Dialer is already running"}), 400
+
+        # Prepare command - use python to run the dialer
+        dialer_script = project_root / "agents" / "wholesale_dialer_agent.py"
+
+        # On Windows, hide the window using CREATE_NO_WINDOW
+        if sys.platform == "win32":
+            creationflags = 0x08000000  # CREATE_NO_WINDOW
+            dialer_process = subprocess.Popen(
+                [sys.executable, str(dialer_script)],
+                cwd=str(project_root),
+                creationflags=creationflags,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            # On Unix-like systems
+            dialer_process = subprocess.Popen(
+                [sys.executable, str(dialer_script)],
+                cwd=str(project_root),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+
+        return jsonify({
+            "status": "started",
+            "message": "Dialer started in background",
+            "pid": dialer_process.pid
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dialer-status", methods=["GET"])
+def dialer_status():
+    """Check if the dialer is running"""
+    global dialer_process
+
+    if dialer_process and dialer_process.poll() is None:
+        return jsonify({"running": True, "pid": dialer_process.pid})
+    else:
+        dialer_process = None
+        return jsonify({"running": False})
+
+
+@app.route("/api/stop-dialer", methods=["POST"])
+def stop_dialer():
+    """Stop the dialer if running"""
+    global dialer_process
+
+    try:
+        if dialer_process and dialer_process.poll() is None:
+            dialer_process.terminate()
+            dialer_process.wait(timeout=5)
+            dialer_process = None
+            return jsonify({"status": "stopped"})
+        return jsonify({"status": "not running"})
+    except Exception as e:
+        try:
+            if dialer_process:
+                dialer_process.kill()
+        except:
+            pass
+        dialer_process = None
+        return jsonify({"status": "force stopped", "error": str(e)})
 
 
 if __name__ == "__main__":

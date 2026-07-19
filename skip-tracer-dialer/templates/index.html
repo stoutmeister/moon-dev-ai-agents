@@ -107,27 +107,41 @@
 
             <!-- Settings Tab -->
             <section class="tab-section" id="settings-tab">
-                <h2>System Settings</h2>
+                <h2>System Settings & Controls</h2>
+
                 <div class="settings-group">
+                    <div class="setting-item">
+                        <label>Start Dialer (Practice Mode)</label>
+                        <div class="dialer-controls">
+                            <button id="start-dialer-btn" class="btn btn-primary">▶️ Start Dialer</button>
+                            <button id="stop-dialer-btn" class="btn btn-danger" style="display: none;">⏹️ Stop Dialer</button>
+                            <span class="status-indicator" id="dialer-indicator">Idle</span>
+                        </div>
+                        <p class="help-text">Launches the AI acquisitions rep in practice mode. You'll see call results in the Calls tab.</p>
+                    </div>
+
                     <div class="setting-item">
                         <label>Anthropic API Key</label>
                         <div class="setting-status" id="api-key-status">Not configured</div>
                     </div>
                     <div class="setting-item">
                         <label>Mode</label>
-                        <div class="setting-value">Practice (Terminal)</div>
+                        <div class="setting-value">Practice (Browser-controlled)</div>
                     </div>
                     <div class="setting-item">
                         <label>Data Directory</label>
                         <div class="setting-value" id="data-dir">Not loaded</div>
                     </div>
                 </div>
+
                 <div class="info-box">
-                    <h3>Next Steps</h3>
+                    <h3>How to Use</h3>
                     <ol>
-                        <li><strong>Practice Mode:</strong> Test the AI rep in PowerShell first</li>
-                        <li><strong>Get Leads:</strong> Run the skip tracer to populate the queue</li>
-                        <li><strong>Go Live (Optional):</strong> Set up Twilio for real calls</li>
+                        <li><strong>Start Dialer:</strong> Click the button above to launch practice mode</li>
+                        <li><strong>Monitor Calls:</strong> Switch to the Calls tab to see results</li>
+                        <li><strong>View Details:</strong> Click on any call to see AI's analysis</li>
+                        <li><strong>Get Real Leads:</strong> Follow the README to set up skip tracing</li>
+                        <li><strong>Go Live (Optional):</strong> See TWILIO_SETUP.md for real calls</li>
                     </ol>
                 </div>
             </section>

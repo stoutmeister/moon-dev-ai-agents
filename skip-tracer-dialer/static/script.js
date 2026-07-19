@@ -34,8 +34,15 @@ document.addEventListener('DOMContentLoaded', () => {
     loadLeads();
     checkApiKey();
 
+    // Setup dialer controls
+    setupDialerControls();
+
     // Refresh stats every 30 seconds
     setInterval(loadStats, 30000);
+
+    // Check dialer status every 5 seconds
+    setInterval(checkDialerStatus, 5000);
+    checkDialerStatus(); // Check immediately
 });
 
 // Search and filter functionality
@@ -207,6 +214,86 @@ async function loadSystemInfo() {
         if (dirEl) dirEl.textContent = data.data_dir;
     } catch (error) {
         console.error('Error loading system info:', error);
+    }
+}
+
+// Dialer controls
+function setupDialerControls() {
+    const startBtn = document.getElementById('start-dialer-btn');
+    const stopBtn = document.getElementById('stop-dialer-btn');
+
+    if (startBtn) {
+        startBtn.addEventListener('click', startDialer);
+    }
+    if (stopBtn) {
+        stopBtn.addEventListener('click', stopDialer);
+    }
+}
+
+async function startDialer() {
+    try {
+        const response = await fetch('/api/start-dialer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await response.json();
+
+        if (data.error) {
+            alert('Error: ' + data.error);
+            return;
+        }
+
+        updateDialerStatus(true);
+        alert('✅ Dialer started! View results in the Calls tab.');
+    } catch (error) {
+        console.error('Error starting dialer:', error);
+        alert('Failed to start dialer');
+    }
+}
+
+async function stopDialer() {
+    try {
+        const response = await fetch('/api/stop-dialer', { method: 'POST' });
+        const data = await response.json();
+        updateDialerStatus(false);
+    } catch (error) {
+        console.error('Error stopping dialer:', error);
+    }
+}
+
+async function checkDialerStatus() {
+    try {
+        const response = await fetch('/api/dialer-status');
+        const data = await response.json();
+        updateDialerStatus(data.running);
+    } catch (error) {
+        console.error('Error checking dialer status:', error);
+    }
+}
+
+function updateDialerStatus(running) {
+    const startBtn = document.getElementById('start-dialer-btn');
+    const stopBtn = document.getElementById('stop-dialer-btn');
+    const indicator = document.getElementById('dialer-indicator');
+
+    if (running) {
+        if (startBtn) startBtn.style.display = 'none';
+        if (stopBtn) stopBtn.style.display = 'block';
+        if (indicator) {
+            indicator.textContent = '🟢 Running';
+            indicator.classList.add('running');
+        }
+        // Refresh logs when dialer is running
+        if (document.getElementById('logs-tab').classList.contains('active')) {
+            loadCallLogs();
+        }
+    } else {
+        if (startBtn) startBtn.style.display = 'block';
+        if (stopBtn) stopBtn.style.display = 'none';
+        if (indicator) {
+            indicator.textContent = '⚫ Idle';
+            indicator.classList.remove('running');
+        }
     }
 }
 
