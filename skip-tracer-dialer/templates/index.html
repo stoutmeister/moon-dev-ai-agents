@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skip Tracer Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="emoji">🌙</span>
+                <h1>Skip Tracer Dashboard</h1>
+            </div>
+            <div class="status" id="api-status">
+                <span class="dot"></span>
+                Checking...
+            </div>
+        </header>
+
+        <!-- Stats Section -->
+        <section class="stats-section">
+            <div class="stat-card">
+                <div class="stat-label">Total Leads</div>
+                <div class="stat-value" id="total-leads">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Pending Calls</div>
+                <div class="stat-value" id="pending-leads">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Completed Calls</div>
+                <div class="stat-value" id="completed-calls">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Motivation</div>
+                <div class="stat-value" id="avg-motivation">0</div>
+            </div>
+        </section>
+
+        <!-- Main Content -->
+        <div class="content">
+            <!-- Leads Tab -->
+            <section class="tab-section active" id="leads-tab">
+                <h2>Traced Leads Queue</h2>
+                <div class="controls">
+                    <input type="text" id="search-leads" placeholder="Search leads..." class="search-box">
+                    <select id="filter-status" class="filter-box">
+                        <option value="">All Status</option>
+                        <option value="pending">Pending</option>
+                        <option value="completed">Completed</option>
+                        <option value="no_contact">No Contact</option>
+                    </select>
+                </div>
+                <div class="table-wrapper">
+                    <table class="leads-table">
+                        <thead>
+                            <tr>
+                                <th>Owner</th>
+                                <th>Property</th>
+                                <th>Phone</th>
+                                <th>Motivation</th>
+                                <th>Status</th>
+                                <th>Traced</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leads-body">
+                            <tr><td colspan="6" class="loading">Loading leads...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Call Logs Tab -->
+            <section class="tab-section" id="logs-tab">
+                <h2>Call History</h2>
+                <div class="controls">
+                    <input type="text" id="search-logs" placeholder="Search calls..." class="search-box">
+                    <select id="filter-disposition" class="filter-box">
+                        <option value="">All Dispositions</option>
+                        <option value="qualified">Qualified</option>
+                        <option value="not_qualified">Not Qualified</option>
+                        <option value="dnc">DNC/Opted Out</option>
+                        <option value="no_answer">No Answer</option>
+                    </select>
+                </div>
+                <div class="table-wrapper">
+                    <table class="logs-table">
+                        <thead>
+                            <tr>
+                                <th>Date/Time</th>
+                                <th>Owner</th>
+                                <th>Property</th>
+                                <th>Disposition</th>
+                                <th>Motivation</th>
+                                <th>Summary</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logs-body">
+                            <tr><td colspan="6" class="loading">Loading call logs...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Settings Tab -->
+            <section class="tab-section" id="settings-tab">
+                <h2>System Settings</h2>
+                <div class="settings-group">
+                    <div class="setting-item">
+                        <label>Anthropic API Key</label>
+                        <div class="setting-status" id="api-key-status">Not configured</div>
+                    </div>
+                    <div class="setting-item">
+                        <label>Mode</label>
+                        <div class="setting-value">Practice (Terminal)</div>
+                    </div>
+                    <div class="setting-item">
+                        <label>Data Directory</label>
+                        <div class="setting-value" id="data-dir">Not loaded</div>
+                    </div>
+                </div>
+                <div class="info-box">
+                    <h3>Next Steps</h3>
+                    <ol>
+                        <li><strong>Practice Mode:</strong> Test the AI rep in PowerShell first</li>
+                        <li><strong>Get Leads:</strong> Run the skip tracer to populate the queue</li>
+                        <li><strong>Go Live (Optional):</strong> Set up Twilio for real calls</li>
+                    </ol>
+                </div>
+            </section>
+        </div>
+
+        <!-- Tab Navigation -->
+        <nav class="tab-nav">
+            <button class="tab-btn active" data-tab="leads-tab">
+                <span class="emoji">📋</span> Leads
+            </button>
+            <button class="tab-btn" data-tab="logs-tab">
+                <span class="emoji">📞</span> Calls
+            </button>
+            <button class="tab-btn" data-tab="settings-tab">
+                <span class="emoji">⚙️</span> Settings
+            </button>
+        </nav>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
